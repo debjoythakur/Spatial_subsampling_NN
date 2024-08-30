@@ -1,3 +1,8 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# In[3]:
+
 
 import numpy as np
 import torch
@@ -64,7 +69,7 @@ def simulate_lattice_and_generate_data(lambda_n, d, R_0, sigma2, phi, nu, f, p):
     return X, Y, lattice_locations
 
 # Example usage
-lambda_n = 8  # Example value
+lambda_n = 5  # Example value
 d = 2         # 2D space
 R_0 = np.array([[-0.5, 0.5]] * d)
 sigma2 = 1.0  # Variance parameter of the Matern variogram
@@ -78,7 +83,7 @@ f = lambda X: np.sum(X * np.arange(1, p + 1), axis=1)
 X, Y, lattice_locations = simulate_lattice_and_generate_data(lambda_n, d, R_0, sigma2, phi, nu, f, p)
 
 
-# In[ ]:
+# In[4]:
 
 
 import time
@@ -278,9 +283,88 @@ def lattice_spatial_nn(lattice_locations, delta, psi, Y, X, p, epoch_num=5, act_
     return N_n, runtime, optimum_radius, average_predictions, mse_subsample
 
 
-# In[ ]:
+# In[5]:
 
 
 N_n, runtime, optimum_radius, average_predictions, mse_subsample = lattice_spatial_nn(lattice_locations, delta = 5
                                                                                        , psi = 0.7, Y = Y, X = X, p=10)
+
+
+# In[3]:
+
+
+import time
+import numpy as np
+import pandas as pd
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
+def spatial_lattice_iid_neural_network(df, delta_n, activation_function='tanh'):
+    start_time = time.time()  # Start the timer
+    
+    df = df.iloc[:, 1:]  # Assuming the first column needs to be excluded
+
+    neighbor_feature = []
+    response = []
+    models = []
+    predictions = []
+    mses = []
+    
+    for i in range(len(df)):
+        temp = pd.DataFrame(columns=df.columns)
+        
+        for j in range(len(df)):
+            if abs(df.iloc[j, 0] - df.iloc[i, 0]) < delta_n and abs(df.iloc[j, 1] - df.iloc[i, 1]) < delta_n:
+                temp = pd.concat([temp, df.iloc[[j], :]], ignore_index=True)
+        
+        if not temp.empty:
+            neighbor_feat = temp.iloc[:, 2:].values  # Excluding the first two columns
+            resp = df.iloc[i, 2:].values  # Response variable
+            
+            # Ensure the neighbor features and response variables have the correct shapes
+            if neighbor_feat.shape[0] != resp.shape[0]:
+                neighbor_feat = neighbor_feat.T
+            
+            neighbor_feature.append(neighbor_feat)
+            response.append(resp)
+            
+            # Splitting data into training and testing sets
+            X_train, X_test, y_train, y_test = train_test_split(neighbor_feat, resp, test_size=0.2, random_state=42)
+            
+            # Ensuring the response variable has the correct shape for a single output node
+            y_train = np.array(y_train).reshape(-1, 1)
+            y_test = np.array(y_test).reshape(-1, 1)
+            
+            # Defining and fitting a neural network model
+            model = Sequential()
+            model.add(Dense(15, input_dim=X_train.shape[1], activation=activation_function))  # Use specified activation function
+            model.add(Dense(15, activation=activation_function))  # Use specified activation function
+            model.add(Dense(1))  # Output layer with 1 node
+
+            model.compile(optimizer='adam', loss='mean_squared_error')
+            model.fit(X_train, y_train, epochs=100, verbose=0)  # Fit the model
+
+            models.append(model)
+            
+            # Making predictions on the test set
+            pred = model.predict(neighbor_feat)
+            predictions.append(pred)
+            
+            # Calculating MSE
+            mse = mean_squared_error(resp, pred)
+            mses.append(mse)
+    
+    average_mse = np.mean(mses)
+    runtime = time.time() - start_time  # Calculate runtime
+    
+    return average_mse, predictions, runtime
+
+# Example usage:
+import pandas as pd
+df = pd.read_csv("~/R/nearest_neughbor_sieve/df20.csv")
+delta_n = 0.8
+mse, preds, run_time = spatial_lattice_iid_neural_network(df, delta_n, activation_function='tanh')
+print(f"Average MSE: {mse}")
+print(f"Runtime: {run_time} seconds")
 
